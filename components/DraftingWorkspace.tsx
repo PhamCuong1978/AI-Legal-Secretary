@@ -38,10 +38,6 @@ export const DraftingWorkspace: React.FC<DraftingWorkspaceProps> = ({ templates 
       const data = await draftDocument(textToDraft, templates);
       setResult(data);
       
-      // If re-drafting, we might want to clear missing values that are now resolved,
-      // but simpler to just let the user see the new state.
-      // However, if the new result still has missing fields, we might want to keep the old values? 
-      // For now, let's reset to avoid confusion.
       setMissingValues({});
 
     } catch (err: any) {
@@ -78,10 +74,45 @@ export const DraftingWorkspace: React.FC<DraftingWorkspaceProps> = ({ templates 
 
   const downloadHTML = () => {
     if (!result) return;
+    
+    // CSS to enforce A4 size and Decree 187/2025/NĐ-CP margins when printing/opening in Word
+    const style = `
+        @page {
+            size: A4;
+            margin: 20mm 15mm 20mm 30mm; /* Top: 20mm, Right: 15mm, Bottom: 20mm, Left: 30mm */
+        }
+        body {
+            font-family: 'Times New Roman', serif;
+            font-size: 13pt; /* Standard size per decree */
+            line-height: 1.5;
+            color: #000;
+            text-align: justify; /* Ensure neat alignment */
+        }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; border: none; }
+        td { vertical-align: top; padding: 0; }
+        
+        /* Ensure Header Table Cells are Centered */
+        table tr:first-child td { text-align: center; }
+        
+        .header-agency { text-align: center; font-weight: bold; font-size: 13pt; text-transform: uppercase; }
+        .header-motto { text-align: center; font-weight: bold; font-size: 13pt; }
+    `;
+
+    const htmlContent = `
+        <html>
+            <head>
+                <meta charset='utf-8'>
+                <title>${result.selected_template}</title>
+                <style>${style}</style>
+            </head>
+            <body>
+                ${result.document_html}
+            </body>
+        </html>
+    `;
+
     const element = document.createElement("a");
-    const file = new Blob([
-        `<html><head><meta charset='utf-8'><title>${result.selected_template}</title></head><body style="font-family: 'Times New Roman', serif; line-height: 1.5;">${result.document_html}</body></html>`
-    ], {type: 'text/html'});
+    const file = new Blob([htmlContent], {type: 'text/html'});
     element.href = URL.createObjectURL(file);
     element.download = `${result.selected_template.replace(/\s+/g, '_')}.html`;
     document.body.appendChild(element); 
@@ -100,7 +131,7 @@ export const DraftingWorkspace: React.FC<DraftingWorkspaceProps> = ({ templates 
         <div className="relative">
           <textarea
             className="w-full h-32 p-4 pr-32 text-slate-700 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-legal-600 focus:border-transparent outline-none resize-none shadow-inner"
-            placeholder="Ví dụ: Soạn thảo hợp đồng lao động cho ông Nguyễn Văn A, chức vụ Kỹ sư phần mềm, lương 20 triệu, bắt đầu từ ngày 01/01/2024..."
+            placeholder="Ví dụ: Soạn thảo biên bản cuộc họp hội đồng quản trị về việc bổ nhiệm giám đốc..."
             value={request}
             onChange={(e) => setRequest(e.target.value)}
             onKeyDown={(e) => {
@@ -152,13 +183,32 @@ export const DraftingWorkspace: React.FC<DraftingWorkspaceProps> = ({ templates 
                 </div>
                 <div className="flex gap-2">
                     <button onClick={downloadHTML} className="text-xs flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 rounded hover:bg-slate-50 text-slate-700">
-                        <i className="fas fa-file-word text-blue-700"></i> Xuất file
+                        <i className="fas fa-file-word text-blue-700"></i> Xuất file (.html/doc)
                     </button>
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-100">
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-100/80">
+                {/* 
+                   A4 Simulation:
+                   Width: 210mm
+                   Min-Height: 297mm 
+                   Margins (Decree 187/2025/NĐ-CP): Top 20mm, Bottom 20mm, Left 30mm, Right 15mm
+                   Font: Times New Roman, 13pt
+                */}
                 <div 
-                    className="document-preview max-w-3xl mx-auto bg-white p-12 shadow-md min-h-full text-justify text-slate-900 leading-relaxed"
+                    className="document-preview bg-white shadow-lg mx-auto text-justify text-slate-900 leading-relaxed"
+                    style={{
+                        width: '210mm',
+                        minHeight: '297mm',
+                        paddingTop: '20mm',
+                        paddingBottom: '20mm',
+                        paddingLeft: '30mm',
+                        paddingRight: '15mm', // Corrected right margin to 15mm
+                        fontFamily: '"Times New Roman", serif',
+                        fontSize: '13pt', 
+                        lineHeight: '1.5',
+                        textAlign: 'justify' // Neat alignment
+                    }}
                     dangerouslySetInnerHTML={{ __html: result.document_html }} 
                 />
             </div>

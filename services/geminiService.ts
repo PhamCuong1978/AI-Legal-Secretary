@@ -1,21 +1,35 @@
 import { GoogleGenAI, Schema, Type, Part } from "@google/genai";
 import { DraftResult, Template } from "../types";
 
-const API_KEY = process.env.API_KEY || '';
-
 // Initialize the client
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// API Key must be obtained exclusively from the environment variable process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // System instruction for the drafting agent
 const DRAFTING_SYSTEM_INSTRUCTION = `
-Bạn là AI Thư ký Soạn thảo Văn bản Chuyên nghiệp. Nhiệm vụ của bạn là soạn thảo văn bản dựa trên Template được cung cấp và dữ liệu đầu vào của người dùng.
+Bạn là AI Thư ký Soạn thảo Văn bản Chuyên nghiệp. Nhiệm vụ của bạn là soạn thảo văn bản dựa trên Template và dữ liệu người dùng, TUÂN THỦ NGHIÊM NGẶT Nghị định 187/2025/NĐ-CP về thể thức văn bản.
 
-QUY TẮC QUAN TRỌNG:
-1. Không biến tấu lung tung khác mẫu trừ khi người dùng yêu cầu.
-2. Luôn ưu tiên giữ nguyên phong cách văn bản gốc mà mẫu đã chỉ định.
-3. Đảm bảo văn phong pháp lý chuẩn mực.
-4. Nếu thiếu thông tin, liệt kê rõ trong trường 'missing_fields'.
-5. Trả về kết quả dưới dạng JSON hợp lệ.
+QUY TẮC VỀ THỂ THỨC (QUAN TRỌNG):
+1.  **Phông chữ**: Bắt buộc dùng Times New Roman.
+2.  **Cỡ chữ & Kiểu chữ**:
+    -   Quốc hiệu: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" (In hoa, Đậm, size 12-13).
+    -   Tiêu ngữ: "Độc lập - Tự do - Hạnh phúc" (In thường, Đậm, size 13-14, chữ cái đầu viết hoa, canh giữa dưới Quốc hiệu, có gạch chân bên dưới).
+    -   Tên cơ quan ban hành: In hoa, Đậm, size 12-13 (Cột trái).
+    -   Số ký hiệu: In thường, size 13 (Canh giữa dưới tên cơ quan).
+    -   Nội dung chính: Size 13-14, dãn dòng 1.5, căn đều 2 bên (Justify).
+3.  **Bố cục Phần mở đầu (Header)**:
+    -   Sử dụng HTML Table (style="width:100%; border:none; margin-bottom:20px") để chia 2 cột.
+    -   Cột trái (khoảng 40%): Tên cơ quan chủ quản (nếu có) + Tên cơ quan ban hành + Số ký hiệu. **BẮT BUỘC: Nội dung trong cột này phải canh giữa (text-align: center)**.
+    -   Cột phải (khoảng 60%): Quốc hiệu + Tiêu ngữ + Địa danh, ngày tháng. **BẮT BUỘC: Nội dung trong cột này phải canh giữa (text-align: center)**.
+4.  **Định dạng HTML**:
+    -   Trả về HTML sạch, sử dụng các thẻ <p>, <strong>, <table>, <em>.
+    -   Tuyệt đối không dùng Markdown (\`\`\`html) trong trường document_html.
+    -   Nội dung văn bản chính (body) dùng thẻ <div style="text-align: justify;"> hoặc <p style="text-align: justify;">.
+
+QUY TẮC SOẠN THẢO:
+1.  Nếu thiếu thông tin, liệt kê rõ trong trường 'missing_fields'.
+2.  Giữ văn phong pháp lý chuẩn mực, trang trọng.
+3.  Trả về kết quả dưới dạng JSON hợp lệ.
 `;
 
 const TEMPLATE_ANALYSIS_INSTRUCTION = `
@@ -32,8 +46,6 @@ export interface AnalyzeInput {
 }
 
 export const analyzeTemplate = async (input: AnalyzeInput): Promise<Partial<Template>> => {
-  if (!API_KEY) throw new Error("API Key not found");
-
   const responseSchema: Schema = {
     type: Type.OBJECT,
     properties: {
@@ -84,8 +96,6 @@ export const draftDocument = async (
   request: string, 
   availableTemplates: Template[]
 ): Promise<DraftResult> => {
-  if (!API_KEY) throw new Error("API Key not found");
-
   // Simplified schema for the drafting result
   const responseSchema: Schema = {
     type: Type.OBJECT,
@@ -94,7 +104,7 @@ export const draftDocument = async (
       selected_template: { type: Type.STRING },
       missing_fields: { type: Type.ARRAY, items: { type: Type.STRING } },
       document_text: { type: Type.STRING },
-      document_html: { type: Type.STRING, description: "HTML version formatted for legal display (using <p>, <strong>, etc.)" },
+      document_html: { type: Type.STRING, description: "HTML version formatted for legal display (using <p>, <strong>, tables for header, etc.)" },
       document_docx_base64: { type: Type.STRING, description: "Leave empty string for now" },
       notes: {
         type: Type.ARRAY,
@@ -111,22 +121,32 @@ export const draftDocument = async (
   };
 
   // Prepare context about available templates
+  // Escape backticks to avoid breaking the template literal
   const templatesContext = availableTemplates.map(t => 
-    `ID: ${t.id}\nNAME: ${t.name}\nSTRUCTURE: ${t.structure}`
+    `ID: ${t.id}\nNAME: ${t.name}\nSTRUCTURE: ${t.structure.replace(/`/g, '\\`')}`
   ).join('\n---\n');
+
+  // Escape backticks in user request
+  const safeRequest = request.replace(/`/g, '\\`');
 
   const prompt = `
   AVAILABLE TEMPLATES:
   ${templatesContext}
 
   USER REQUEST:
-  "${request}"
+  "${safeRequest}"
 
   INSTRUCTIONS:
-  1. Select the most appropriate template from the list based on the user request. If none fit perfectly, pick the closest one or use general legal knowledge to adapt.
-  2. Fill the template using the information in the USER REQUEST.
-  3. If information is missing for a placeholder, list it in 'missing_fields'.
-  4. Create a clean HTML version suitable for display.
+  1. Select the most appropriate template.
+  2. Fill the template using the USER REQUEST information.
+  3. **REFORMAT THE OUTPUT HTML** to match Decree 187/2025/NĐ-CP exactly.
+     - **Header**: Use a 2-column HTML table (border: 0).
+       - Left Column: Agency Name (UPPERCASE, BOLD). **Must be centered (text-align: center)** relative to the column.
+       - Right Column: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" (UPPERCASE, BOLD) and Motto. **Must be centered (text-align: center)** relative to the column.
+       - Use inline styles for table cells: <td style="text-align: center; vertical-align: top;">
+     - **Body**: Text must be justified (text-align: justify).
+     - **Fonts**: Times New Roman, size 13-14.
+  4. Create a clean HTML version.
   `;
 
   try {
