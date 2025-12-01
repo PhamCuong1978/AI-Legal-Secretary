@@ -1,0 +1,5 @@
+{
+  "name": "AI Legal Secretary",
+  "description": "An intelligent document drafting assistant that learns from uploaded templates to generate professional legal documents, contracts, and decisions automatically.",
+  "requestFramePermissions": []
+}
