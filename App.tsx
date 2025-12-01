@@ -15,6 +15,11 @@ const App: React.FC = () => {
   const [version, setVersion] = useState<string>(getStoredVersion);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Sidebar State & Refs
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const toggleBtnRef = useRef<HTMLButtonElement>(null);
+
   // Cloud Config State
   const [showSettings, setShowSettings] = useState(false);
   const [cloudConfig, setCloudConfig] = useState<CloudConfig>(() => {
@@ -38,6 +43,32 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('legal_app_version', version);
   }, [version]);
+
+  // Click Outside Logic to Close Sidebar
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // If sidebar is closed, do nothing
+      if (!isSidebarOpen) return;
+
+      // If click is inside sidebar, do nothing
+      if (sidebarRef.current && sidebarRef.current.contains(event.target as Node)) {
+        return;
+      }
+
+      // If click is on the toggle button, do nothing (let the button handle toggle)
+      if (toggleBtnRef.current && toggleBtnRef.current.contains(event.target as Node)) {
+        return;
+      }
+
+      // Otherwise, close sidebar
+      setIsSidebarOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSidebarOpen]);
 
   // Cloud Persistence - Auto Load on Mount/Config Change
   useEffect(() => {
@@ -64,8 +95,6 @@ const App: React.FC = () => {
       if (fetchOnly) {
         const data = await fetchCloudData(cloudConfig);
         if (data && Array.isArray(data.templates)) {
-            // Merge logic: For simplicity, cloud overwrites local if cloud is newer or we are forcing fetch
-            // Ideally we compare timestamps, but here we trust the user wants 'Sync'
             setTemplates(data.templates);
             if (data.version) setVersion(data.version);
             setLastSyncTime(new Date().toLocaleTimeString());
@@ -80,7 +109,6 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error("Cloud Sync Error", err);
-      // Optional: show toast
     } finally {
       setIsSyncing(false);
     }
@@ -97,7 +125,6 @@ const App: React.FC = () => {
     setTemplates(prev => [newTemplate, ...prev]);
     const newVer = incrementVersion(version);
     setVersion(newVer);
-    // Auto-save handled by useEffect
   };
 
   const handleDeleteTemplate = (id: string) => {
@@ -132,14 +159,17 @@ const App: React.FC = () => {
     }
   };
 
-  // Retrieve injected build version from Vite
   const buildVersion = (process.env as any).BUILD_VERSION || 'Dev';
 
   return (
-    <div className="flex h-screen bg-legal-50">
+    <div className="flex h-screen bg-legal-50 relative overflow-hidden">
+      
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-legal-900 text-white flex flex-col shadow-xl z-10 relative">
-        <div className="p-6 border-b border-legal-800">
+      <div 
+        ref={sidebarRef}
+        className={`fixed inset-y-0 left-0 w-64 bg-legal-900 text-white flex flex-col shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="p-6 border-b border-legal-800 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/50 shrink-0">
                <i className="fas fa-scale-balanced text-white"></i>
@@ -158,7 +188,7 @@ const App: React.FC = () => {
         
         <nav className="flex-1 p-4 space-y-2">
           <button
-            onClick={() => setView(AppView.DRAFTING)}
+            onClick={() => { setView(AppView.DRAFTING); setIsSidebarOpen(false); }}
             className={`w-full text-left px-4 py-3 rounded-lg flex items-center transition-all
               ${view === AppView.DRAFTING 
                 ? 'bg-legal-800 text-white shadow-lg' 
@@ -169,7 +199,7 @@ const App: React.FC = () => {
           </button>
           
           <button
-            onClick={() => setView(AppView.TEMPLATES)}
+            onClick={() => { setView(AppView.TEMPLATES); setIsSidebarOpen(false); }}
             className={`w-full text-left px-4 py-3 rounded-lg flex items-center transition-all
               ${view === AppView.TEMPLATES 
                 ? 'bg-legal-800 text-white shadow-lg' 
@@ -228,12 +258,22 @@ const App: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden p-6 relative">
+      <main className="flex-1 overflow-hidden p-6 relative w-full h-full">
+        {/* Toggle Button */}
+        <button
+          ref={toggleBtnRef}
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="absolute top-4 left-4 z-40 w-10 h-10 bg-white border border-legal-200 text-legal-600 rounded-lg shadow-md flex items-center justify-center hover:bg-legal-50 hover:text-legal-800 transition-colors"
+          title={isSidebarOpen ? "Đóng menu" : "Mở menu"}
+        >
+          <i className={`fas ${isSidebarOpen ? 'fa-times' : 'fa-bars'}`}></i>
+        </button>
+
         <div className="absolute top-0 right-0 p-4 opacity-50 pointer-events-none">
            <i className="fas fa-gavel text-[200px] text-legal-100 -rotate-12"></i>
         </div>
 
-        <div className="relative h-full z-0">
+        <div className="relative h-full z-0 pt-10"> {/* Added padding-top to account for toggle button */}
             {view === AppView.TEMPLATES && (
             <TemplateManager 
                 templates={templates} 
@@ -252,7 +292,7 @@ const App: React.FC = () => {
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-fade-in p-6">
                 <h3 className="text-xl font-bold text-legal-900 mb-4 flex items-center gap-2">
                     <i className="fas fa-cloud-upload-alt text-legal-600"></i>
