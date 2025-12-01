@@ -8,17 +8,7 @@ import { exportData, parseImportData } from './services/persistenceService';
 import { CloudConfig, fetchCloudData, saveCloudData } from './services/syncService';
 
 // Initial dummy data to help users start immediately
-const INITIAL_TEMPLATES: Template[] = [
-  {
-    id: 'tpl-001',
-    name: 'Đơn xin nghỉ phép',
-    category: 'Hành chính',
-    description: 'Mẫu đơn xin nghỉ phép chuẩn cho nhân viên văn phòng.',
-    structure: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\nĐộc lập - Tự do - Hạnh phúc\n\nĐƠN XIN NGHỈ PHÉP\n\nKính gửi: {{NGƯỜI_NHẬN/PHÒNG_BAN}}\n\nTôi tên là: {{TÊN_NHÂN_VIÊN}}\nChức vụ: {{CHỨC_VỤ}}\nBộ phận: {{BỘ_PHẬN}}\n\nTôi làm đơn này xin phép được nghỉ {{SỐ_NGÀY}} ngày, từ ngày {{NGÀY_BẮT_ĐẦU}} đến hết ngày {{NGÀY_KẾT_THÚC}}.\n\nLý do nghỉ: {{LÝ_DO}}\n\nTôi cam kết đã bàn giao công việc và giữ liên lạc trong trường hợp khẩn cấp.\n\nTrân trọng,\n{{NGÀY_KÝ}}\n{{TÊN_NHÂN_VIÊN}}",
-    placeholders: ["NGƯỜI_NHẬN", "TÊN_NHÂN_VIÊN", "CHỨC_VỤ", "LÝ_DO", "SỐ_NGÀY"],
-    createdAt: Date.now()
-  }
-];
+const INITIAL_TEMPLATES: Template[] = [];
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.DRAFTING);
