@@ -33,3 +33,17 @@ export enum AppView {
   TEMPLATES = 'TEMPLATES',
   DRAFTING = 'DRAFTING',
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text?: string;
+  audioData?: string; // Base64
+  isError?: boolean;
+}
+
+export interface AssistantContext {
+  templates: Template[];
+  currentRequest: string;
+  currentDraft?: DraftResult | null;
+}

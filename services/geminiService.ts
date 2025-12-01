@@ -1,5 +1,5 @@
-import { GoogleGenAI, Schema, Type, Part } from "@google/genai";
-import { DraftResult, Template } from "../types";
+import { GoogleGenAI, Schema, Type, Part, FunctionDeclaration, Tool } from "@google/genai";
+import { DraftResult, Template, AssistantContext, ChatMessage } from "../types";
 
 // Initialize the client
 // API Key must be obtained exclusively from the environment variable process.env.API_KEY
@@ -37,6 +37,17 @@ Bạn là chuyên gia phân tích văn bản pháp lý. Nhiệm vụ của bạn
 Hãy xác định các trường thay đổi (placeholder) và bọc chúng bằng {{...}}.
 `;
 
+const ASSISTANT_SYSTEM_INSTRUCTION = `
+Bạn là "AI Trợ lý soạn thảo của Mr Cường".
+Nhiệm vụ: Hỗ trợ người dùng trong quá trình soạn thảo, tìm kiếm mẫu, và chỉnh sửa văn bản trực tiếp.
+Bạn có quyền truy cập vào danh sách mẫu (Template Library) và nội dung đang soạn thảo (Current Draft).
+Bạn có thể thực hiện các hành động sau thông qua Function Calling:
+1. Cập nhật yêu cầu soạn thảo (update_request).
+2. Cập nhật trực tiếp nội dung văn bản HTML đã soạn (update_document_html).
+
+Phong cách: Chuyên nghiệp, ngắn gọn, thân thiện, xưng hô là "Em" hoặc "Trợ lý".
+`;
+
 export interface AnalyzeInput {
   text?: string;
   inlineData?: {
@@ -44,6 +55,32 @@ export interface AnalyzeInput {
     mimeType: string;
   };
 }
+
+// --- Function Declarations for Assistant ---
+const updateRequestTool: FunctionDeclaration = {
+  name: "update_request",
+  description: "Cập nhật hoặc viết lại nội dung yêu cầu soạn thảo (input request) của người dùng.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      new_request: { type: Type.STRING, description: "Nội dung yêu cầu mới." },
+      action: { type: Type.STRING, enum: ["append", "replace"], description: "Thêm vào (append) hay thay thế (replace)." }
+    },
+    required: ["new_request", "action"]
+  }
+};
+
+const updateDocumentTool: FunctionDeclaration = {
+  name: "update_document_html",
+  description: "Chỉnh sửa trực tiếp nội dung HTML của văn bản đang có (ví dụ: sửa lỗi chính tả, thay đổi điều khoản).",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      html_content: { type: Type.STRING, description: "Toàn bộ nội dung HTML mới sau khi chỉnh sửa." }
+    },
+    required: ["html_content"]
+  }
+};
 
 export const analyzeTemplate = async (input: AnalyzeInput): Promise<Partial<Template>> => {
   const responseSchema: Schema = {
@@ -164,6 +201,76 @@ export const draftDocument = async (
     return JSON.parse(response.text) as DraftResult;
   } catch (error) {
     console.error("Error drafting document:", error);
+    throw error;
+  }
+};
+
+export const chatWithAssistant = async (
+  history: ChatMessage[],
+  newMessage: ChatMessage,
+  context: AssistantContext
+) => {
+  // Construct context string
+  const templatesInfo = context.templates.map(t => `- ${t.name} (${t.category})`).join('\n');
+  const currentDraftInfo = context.currentDraft 
+    ? `Current Draft Status: ${context.currentDraft.status}\nSelected Template: ${context.currentDraft.selected_template}\nContent Preview: ${context.currentDraft.document_text.substring(0, 500)}...`
+    : "No document drafted yet.";
+  
+  const contextPrompt = `
+  --- APP CONTEXT ---
+  Available Templates:
+  ${templatesInfo}
+
+  Current Request Input: "${context.currentRequest}"
+
+  ${currentDraftInfo}
+  -------------------
+  `;
+
+  // Convert ChatMessage history to Gemini Content format
+  // We explicitly type this to prevent TS from inferring { text: string }[] for parts
+  const contents: { role: string; parts: Part[] }[] = history
+    .filter(msg => !msg.isError)
+    .map(msg => ({
+      role: msg.role,
+      parts: [
+        { text: msg.text || '' } // Simplified for history, ignoring old audio blobs to save tokens
+      ]
+    }));
+
+  // Add the new message
+  const newParts: Part[] = [];
+  // Inject context before the user's message text
+  newParts.push({ text: contextPrompt + "\n\nUser Message: " + (newMessage.text || "") });
+  
+  if (newMessage.audioData) {
+    newParts.push({
+      inlineData: {
+        mimeType: "audio/wav", // Assuming wav from MediaRecorder
+        data: newMessage.audioData
+      }
+    });
+  }
+
+  contents.push({ role: 'user', parts: newParts });
+
+  const tools: Tool[] = [
+    { functionDeclarations: [updateRequestTool, updateDocumentTool] }
+  ];
+
+  try {
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: contents,
+      config: {
+        systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
+        tools: tools
+      }
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Assistant Error:", error);
     throw error;
   }
 };

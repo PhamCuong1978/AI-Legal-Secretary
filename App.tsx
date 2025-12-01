@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Template, AppView } from './types';
+import { Template, AppView, DraftResult } from './types';
 import { TemplateManager } from './components/TemplateManager';
 import { DraftingWorkspace } from './components/DraftingWorkspace';
+import { AssistantChat } from './components/AssistantChat'; // Import Assistant
 import { getStoredVersion, incrementVersion } from './services/versionService';
 import { exportData, parseImportData } from './services/persistenceService';
 import { CloudConfig, fetchCloudData, saveCloudData } from './services/syncService';
@@ -15,6 +16,10 @@ const App: React.FC = () => {
   const [version, setVersion] = useState<string>(getStoredVersion);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // --- Hoisted State for Drafting to share with Assistant ---
+  const [draftRequest, setDraftRequest] = useState('');
+  const [draftResult, setDraftResult] = useState<DraftResult | null>(null);
+
   // Sidebar State & Refs
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -159,6 +164,26 @@ const App: React.FC = () => {
     }
   };
 
+  // --- Assistant Callbacks ---
+  const handleAssistantUpdateRequest = (newText: string, action: 'append' | 'replace') => {
+      setView(AppView.DRAFTING); // Ensure we are on drafting view
+      if (action === 'append') {
+          setDraftRequest(prev => prev + (prev ? '\n' : '') + newText);
+      } else {
+          setDraftRequest(newText);
+      }
+  };
+
+  const handleAssistantUpdateDraft = (newHtml: string) => {
+      setView(AppView.DRAFTING);
+      if (draftResult) {
+          setDraftResult({
+              ...draftResult,
+              document_html: newHtml
+          });
+      }
+  };
+
   const buildVersion = (process.env as any).BUILD_VERSION || 'Dev';
 
   return (
@@ -285,10 +310,23 @@ const App: React.FC = () => {
             {view === AppView.DRAFTING && (
             <DraftingWorkspace 
                 templates={templates} 
+                request={draftRequest}
+                setRequest={setDraftRequest}
+                result={draftResult}
+                setResult={setDraftResult}
             />
             )}
         </div>
       </main>
+
+      {/* AI Assistant Chat */}
+      <AssistantChat 
+          templates={templates}
+          currentRequest={draftRequest}
+          currentDraft={draftResult}
+          onUpdateRequest={handleAssistantUpdateRequest}
+          onUpdateDraftContent={handleAssistantUpdateDraft}
+      />
 
       {/* Settings Modal */}
       {showSettings && (

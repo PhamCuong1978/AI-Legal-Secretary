@@ -1,15 +1,23 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { DraftResult, Template } from '../types';
 import { draftDocument } from '../services/geminiService';
 
 interface DraftingWorkspaceProps {
   templates: Template[];
+  request: string;
+  setRequest: (req: string) => void;
+  result: DraftResult | null;
+  setResult: (res: DraftResult | null) => void;
 }
 
-export const DraftingWorkspace: React.FC<DraftingWorkspaceProps> = ({ templates }) => {
-  const [request, setRequest] = useState('');
+export const DraftingWorkspace: React.FC<DraftingWorkspaceProps> = ({ 
+  templates, 
+  request, 
+  setRequest,
+  result,
+  setResult
+}) => {
   const [isDrafting, setIsDrafting] = useState(false);
-  const [result, setResult] = useState<DraftResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // State to track manual inputs for missing fields
